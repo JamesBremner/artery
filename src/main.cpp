@@ -19,6 +19,29 @@ public:
     int n2;
     std::string text();
 };
+
+class cArteries
+{
+public:
+
+    void addNode(const std::pair<int, int> &p);
+    void addLinkEnd(const std::pair<int, int> &p);
+
+    void draw(wex::shapes &S);
+
+    std::vector<std::string> textNodes();
+    std::vector<std::string> textLinks();
+
+private:
+    std::vector<cLink> myLinks;
+    std::vector<std::pair<int, int>> myNodeLocs;
+    std::vector<std::pair<int, int>> myLinkLocs;
+
+    int linkNode(int epIndex);
+    void linkNodes();
+    void drawNodes(wex::shapes &S);
+    void drawLinks(wex::shapes &S);
+};
 class cGUI : public cStarterGUI
 {
 public:
@@ -36,16 +59,13 @@ private:
     float myXrayDisplayWidth;
     int myPointSelectedX;
     int myPointSelectedY;
-    std::vector<std::pair<int, int>> myNodeLocs;
-    std::vector<std::pair<int, int>> myLinkLocs;
-    std::vector<cLink> myLinks;
+
+    cArteries myArteries;
 
     void draw(PAINTSTRUCT &ps);
     void drawMeasure(PAINTSTRUCT &ps);
     void menus();
     void clickRight();
-    void linkNodes();
-    int linkNode(int epIndex);
 };
 
 std::string cLink::text()
@@ -149,20 +169,18 @@ void cGUI::clickRight()
     myPointMenu->append(
         "Node", [&](const std::string &title)
         { 
-            myNodeLocs.push_back({
+            myArteries.addNode({
                 mouse.x,
                 mouse.y});
-            linkNodes();
     mypnlMeasure.update();
     mypnlxray.update(); });
 
     myPointMenu->append(
         "Link end point", [&](const std::string &title)
         { 
-            myLinkLocs.push_back({
+            myArteries.addLinkEnd({
                 mouse.x,
                 mouse.y});
-            linkNodes();
     mypnlMeasure.update();
     mypnlxray.update(); });
 
@@ -245,23 +263,7 @@ void cGUI::draw(PAINTSTRUCT &ps)
 
         delete myXrayBitmap;
 
-        S.color(0x00FFFF);
-        S.fill();
-        for (auto &p : myNodeLocs)
-        {
-            S.circle(
-                p.first,
-                p.second,
-                5);
-        }
-
-        S.color(0xFF0000);
-        S.penThick(2);
-        for (auto &l : myLinks)
-        {
-            S.line({l.e1.first, l.e1.second,
-                    l.e2.first, l.e2.second});
-        }
+        myArteries.draw(S);
 
         SetFocus(mypnlxray.handle());
     }
@@ -277,26 +279,37 @@ void cGUI::drawMeasure(PAINTSTRUCT &ps)
     S.text("Nodes", {20, 20, 100, 30});
     int y = 60;
     int kn = 0;
-    for (auto &p : myNodeLocs)
+    for (auto &text : myArteries.textNodes())
     {
         S.text(
-            std::to_string(kn++) + ": " + std::to_string(p.first) + ", " + std::to_string(p.second),
+            text,
             {20, y, 100, 25});
         y += 27;
     }
 
     S.text("Links", {150, 20, 100, 30});
     y = 60;
-    for (auto &l : myLinks)
+    for (auto &text : myArteries.textLinks())
     {
         S.text(
-            l.text(),
+            text,
             {150, y, 200, 25});
         y += 30;
     }
 }
 
-int cGUI::linkNode(int epIndex)
+void cArteries::addNode(const std::pair<int, int> &p)
+{
+    myNodeLocs.push_back(p);
+    linkNodes();
+}
+void cArteries::addLinkEnd(const std::pair<int, int> &p)
+{
+    myLinkLocs.push_back(p);
+    linkNodes();
+}
+
+int cArteries::linkNode(int epIndex)
 {
     auto ep = myLinkLocs[epIndex];
     int mind = MAXINT;
@@ -317,21 +330,68 @@ int cGUI::linkNode(int epIndex)
     return closest;
 }
 
-void cGUI::linkNodes()
+void cArteries::linkNodes()
 {
     myLinks.clear();
     for (int kl = 0; kl < (int)myLinkLocs.size() - 1; kl += 2)
     {
         cLink link;
- 
+
         link.n1 = linkNode(kl);
         link.e1 = myLinkLocs[kl];
 
-        link.n2 = linkNode(kl+1);
-        link.e2 = myLinkLocs[kl+1];;
+        link.n2 = linkNode(kl + 1);
+        link.e2 = myLinkLocs[kl + 1];
 
         myLinks.push_back(link);
     }
+}
+void cArteries::draw(wex::shapes &S)
+{
+    drawNodes(S);
+    drawLinks(S);
+}
+void cArteries::drawNodes(wex::shapes &S)
+{
+    S.color(0x00FFFF);
+    S.fill();
+    for (auto &p : myNodeLocs)
+    {
+        S.circle(
+            p.first,
+            p.second,
+            5);
+    }
+}
+void cArteries::drawLinks(wex::shapes &S)
+{
+    S.color(0xFF0000);
+    S.penThick(2);
+    for (auto &l : myLinks)
+    {
+        S.line({l.e1.first, l.e1.second,
+                l.e2.first, l.e2.second});
+    }
+}
+std::vector<std::string> cArteries::textNodes()
+{
+    std::vector<std::string> vs;
+    int kn = 0;
+    for (auto &p : myNodeLocs)
+    {
+        vs.push_back(
+            std::to_string(kn++) + ": " + std::to_string(p.first) + ", " + std::to_string(p.second));
+    }
+    return vs;
+}
+std::vector<std::string> cArteries::textLinks()
+{
+    std::vector<std::string> vs;
+        for (auto &l : myLinks)
+    {
+        vs.push_back( l.text() );
+    }
+     return vs;
 }
 
 main()

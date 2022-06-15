@@ -3,16 +3,18 @@
 #include <sstream>
 #include <iostream>
 #include <vector>
+#include <set>
 #include <algorithm>
 #include <windows.h>
 #include <gdiplus.h>
 #include <wex.h>
 #include "cStarterGUI.h"
 
-class cLink {
+class cLink
+{
 public:
-    std::pair<int,int> e1;
-    std::pair<int,int> e2;
+    std::pair<int, int> e1;
+    std::pair<int, int> e2;
     int n1;
     int n2;
     std::string text();
@@ -45,14 +47,16 @@ private:
     void nodeLocate(const std::string &pointName);
     void linkLocate(const std::string &pointName);
     void linkNodes();
+    void autoScan();
 };
 
 std::string cLink::text()
 {
     std::stringstream ss;
-    ss << e1.first <<","<< e1.second
-        <<" <-> "<<e2.first<<","<<e2.second
-        <<"  "<<n1<<"<->"<<n2;
+    // ss << e1.first << "," << e1.second
+    //    << " <-> " << e2.first << "," << e2.second
+    //    << "  " << n1 << "<->" << n2;
+    ss  << n1 << "<->" << n2;
     return ss.str();
 }
 
@@ -102,8 +106,10 @@ void cGUI::menus()
 
     myViewMenu = new wex::menu(fm);
 
-    myViewMenu->append("X-ray", [&](const std::string &title)
-                       {
+    myViewMenu->append(
+        "X-ray",
+        [&](const std::string &title)
+        {
                            // prompt user for X-ray file to display
                            wex::filebox fb(fm);
                            fb.open();
@@ -121,6 +127,16 @@ void cGUI::menus()
                            //measurePanelsUpdate();
 
                            fm.update(); });
+
+    // myViewMenu->append(
+    //     "Auto Scan",
+    //     [&](const std::string &title)
+    //     {
+    //         autoScan();
+    //     });
+
+    mb.append("Menu", *myViewMenu);
+
     // myViewMenu->append(theLanguage.get("Points"), [&](const std::string &title)
     //                    {
     //     mypnlMeasure.show( false );
@@ -160,7 +176,6 @@ void cGUI::menus()
     //     myViewMenu->check(5, true);
     //     myForm.text("Céphacile");
     // }
-    mb.append("View", *myViewMenu);
 
     // /////// Database menu
 
@@ -199,21 +214,23 @@ void cGUI::nodeLocate(const std::string &pointName)
 {
     // locate point where mouse was when menu popped up
     float scale = 1000 / myXrayDisplayWidth;
-    int x = scale * myPointSelectedX;
-    int y = scale * myPointSelectedY;
+    int x = myPointSelectedX;
+    int y = myPointSelectedY;
     myNodeLocs.push_back({x, y});
     linkNodes();
     mypnlMeasure.update();
+    mypnlxray.update();
 }
 
 void cGUI::linkLocate(const std::string &pointName)
 {
     float scale = 1000 / myXrayDisplayWidth;
-    int x = scale * myPointSelectedX;
-    int y = scale * myPointSelectedY;
+    int x = myPointSelectedX;
+    int y = myPointSelectedY;
     myLinkLocs.push_back({x, y});
     linkNodes();
     mypnlMeasure.update();
+    mypnlxray.update();
 }
 
 void cGUI::draw(PAINTSTRUCT &ps)
@@ -273,6 +290,12 @@ void cGUI::draw(PAINTSTRUCT &ps)
             xh /= s;
             myXrayDisplayWidth /= s;
         }
+        if (xh < maxh)
+        {
+            float s = xh / maxh;
+            xh /= s;
+            myXrayDisplayWidth /= s;
+        }
         Gdiplus::PointF dst[] =
             {
                 Gdiplus::PointF(0.0f, 0.0f),
@@ -289,6 +312,24 @@ void cGUI::draw(PAINTSTRUCT &ps)
         // thePoints.draw( S, 1000 / myXrayDisplayWidth );
 
         // mypnlMeasure.move( maxw+50,20,700,800);
+
+        S.color(0x00FFFF);
+        S.fill();
+        for (auto &p : myNodeLocs)
+        {
+            S.circle(
+                p.first,
+                p.second,
+                5);
+        }
+
+        S.color(0xFF0000);
+        S.penThick(2);
+        for (auto &l : myLinks)
+        {
+            S.line({l.e1.first, l.e1.second,
+                    l.e2.first, l.e2.second});
+        }
 
         SetFocus(mypnlxray.handle());
     }
@@ -307,68 +348,110 @@ void cGUI::drawMeasure(PAINTSTRUCT &ps)
     for (auto &p : myNodeLocs)
     {
         S.text(
-            std::to_string(kn++) + ": "
-            +std::to_string(p.first) + ", " + std::to_string(p.second),
+            std::to_string(kn++) + ": " + std::to_string(p.first) + ", " + std::to_string(p.second),
             {20, y, 100, 25});
-        y += 30;
+        y += 27;
     }
 
     S.text("Links", {150, 20, 100, 30});
     y = 60;
-    for (auto& l : myLinks )
+    for (auto &l : myLinks)
     {
-        S.text( 
+        S.text(
             l.text(),
             {150, y, 200, 25});
         y += 30;
     }
 }
 
- void cGUI::linkNodes()
- {
-     myLinks.clear();
-      for (int kl = 0; kl < (int)myLinkLocs.size()-1; kl += 2 )
-      {
-          cLink link;
-          auto ep = myLinkLocs[kl];
-          int mind = MAXINT;
-          int closest;
-          int kn = -1;
-          for( auto& n : myNodeLocs )
-          {
-              kn++;
-              int dx = ep.first - n.first;
-              int dy = ep.second - n.second;
-              int d2 = dx*dx + dy*dy;
-              if( d2 < mind )
-              {
-                  mind = d2;
-                  closest = kn;
-              }
-          }
-          link.n1 = closest;
-          link.e1 = ep;
+void cGUI::linkNodes()
+{
+    myLinks.clear();
+    for (int kl = 0; kl < (int)myLinkLocs.size() - 1; kl += 2)
+    {
+        cLink link;
+        auto ep = myLinkLocs[kl];
+        int mind = MAXINT;
+        int closest;
+        int kn = -1;
+        for (auto &n : myNodeLocs)
+        {
+            kn++;
+            int dx = ep.first - n.first;
+            int dy = ep.second - n.second;
+            int d2 = dx * dx + dy * dy;
+            if (d2 < mind)
+            {
+                mind = d2;
+                closest = kn;
+            }
+        }
+        link.n1 = closest;
+        link.e1 = ep;
 
-          ep = myLinkLocs[kl+1];
-           mind = MAXINT;
-           kn = -1;
-          for( auto& n : myNodeLocs )
-          {
-              kn++;
-              int dx = ep.first - n.first;
-              int dy = ep.second - n.second;
-              int d2 = dx*dx + dy*dy;
-              if( d2 < mind )
-              {
-                  mind = d2;
-                  closest = kn;
-              }
-          }
-          link.n2 = closest;
-          link.e2 = ep;
-          myLinks.push_back( link );
-      }
- }
+        ep = myLinkLocs[kl + 1];
+        mind = MAXINT;
+        kn = -1;
+        for (auto &n : myNodeLocs)
+        {
+            kn++;
+            int dx = ep.first - n.first;
+            int dy = ep.second - n.second;
+            int d2 = dx * dx + dy * dy;
+            if (d2 < mind)
+            {
+                mind = d2;
+                closest = kn;
+            }
+        }
+        link.n2 = closest;
+        link.e2 = ep;
+        myLinks.push_back(link);
+    }
+}
+
+void cGUI::autoScan()
+{
+    myNodeLocs.clear();
+    if (!myXrayFilename.length())
+        return;
+    Gdiplus::RectF bounds;
+    Gdiplus::Unit unit;
+    Gdiplus::Color color;
+    myXrayBitmap->GetBounds(&bounds, &unit);
+    std::cout << bounds.Width << " by " << bounds.Width << "\n";
+    for (int kx = 0; kx < myXrayDisplayWidth; kx++)
+    {
+        std::cout << "\n";
+        for (int ky = 0; ky < bounds.Height; ky++)
+        {
+            myXrayBitmap->GetPixel(kx, ky, &color);
+            if (color.GetBlue() > 0xF0 &&
+                color.GetRed() < 10 &&
+                color.GetGreen() < 10)
+            {
+                // std::cout << kx << " " << ky << ",";
+                if (std::find_if(
+                        myNodeLocs.begin(), myNodeLocs.end(),
+                        [&](const std::pair<int, int> &n)
+                        {
+                            return (fabs(n.first - kx) <= 30 &&
+                                    fabs(n.second - ky) <= 30);
+                        }) == myNodeLocs.end())
+                {
+                    myNodeLocs.push_back({kx + 15, ky});
+                    // std::cout <<" nodes "<< vNode.size() << " inserted\n";
+                    // for( auto& p : vNode )
+                    //     std::cout << p.first <<"," << p.second << " ";
+                    // std::cout << "\n\n";
+                }
+            }
+        }
+    }
+    linkNodes();
+    mypnlMeasure.update();
+    mypnlxray.update();
+}
 
 main()
 {
